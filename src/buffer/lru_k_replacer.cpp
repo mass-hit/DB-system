@@ -51,11 +51,13 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, AccessType access_type) {
     curr_size_++;
   }
   auto &node = node_store_[frame_id];
-  if(node->GetEvicted())
+  if(node->GetEvicted()) {
     evictable_.erase(node.get());
+  }
   node->Access(access_type, ++current_timestamp_);
-  if(node->GetEvicted())
+  if(node->GetEvicted()) {
     evictable_.insert(node.get());
+  }
 }
 
 void LRUKReplacer::SetEvictable(frame_id_t frame_id, bool set_evictable) {

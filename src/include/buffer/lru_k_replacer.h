@@ -26,7 +26,7 @@
 
 namespace bustub {
 
-constexpr size_t kMaxSize = std::numeric_limits<size_t>::max();
+constexpr size_t K_MAX_SIZE = std::numeric_limits<size_t>::max();
 
 enum class AccessType { Unknown = 0, Lookup, Scan, Index };
 
@@ -50,7 +50,7 @@ public:
   bool is_evictable_{false};
 };
 struct LRUKComp {
- bool operator()(const LRUKNode* lhs, const LRUKNode* rhs) const  {
+ auto operator()(const LRUKNode* lhs, const LRUKNode* rhs) const ->bool {
   bool lhs_has_k = lhs->HaveK();
   bool rhs_has_k = rhs->HaveK();
   if (lhs_has_k == rhs_has_k) {
