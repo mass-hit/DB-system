@@ -16,6 +16,7 @@ IndexScanExecutor::IndexScanExecutor(ExecutorContext *exec_ctx, const IndexScanP
     : AbstractExecutor(exec_ctx),plan_(plan) {}
 
 void IndexScanExecutor::Init() {
+  rids_.clear();
   auto index_info = exec_ctx_->GetCatalog()->GetIndex(plan_->GetIndexOid());
   table_info_=exec_ctx_->GetCatalog()->GetTable(index_info->table_name_);
   auto htable_ = dynamic_cast<HashTableIndexForTwoIntegerColumn *>(index_info->index_.get());
