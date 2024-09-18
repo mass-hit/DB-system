@@ -19,8 +19,8 @@ void IndexScanExecutor::Init() {
   rids_.clear();
   auto index_info = exec_ctx_->GetCatalog()->GetIndex(plan_->GetIndexOid());
   table_info_=exec_ctx_->GetCatalog()->GetTable(index_info->table_name_);
-  auto htable_ = dynamic_cast<HashTableIndexForTwoIntegerColumn *>(index_info->index_.get());
-  htable_->ScanKey(Tuple{{dynamic_cast<ConstantValueExpression *>(plan_->filter_predicate_->children_[1].get())->val_},index_info->index_->GetKeySchema()},&rids_,exec_ctx_->GetTransaction());
+  auto htable = dynamic_cast<HashTableIndexForTwoIntegerColumn *>(index_info->index_.get());
+  htable->ScanKey(Tuple{{dynamic_cast<ConstantValueExpression *>(plan_->filter_predicate_->children_[1].get())->val_},index_info->index_->GetKeySchema()},&rids_,exec_ctx_->GetTransaction());
   rid_iter_=rids_.begin();
 }
 

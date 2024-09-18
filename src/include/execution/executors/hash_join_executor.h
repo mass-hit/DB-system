@@ -24,10 +24,10 @@
 
 namespace bustub {
 struct HashJoinKey {
- std::vector<Value> keys;
+ std::vector<Value> keys_;
  auto operator==(const HashJoinKey &other) const -> bool {
-  for (uint32_t i = 0; i < other.keys.size(); i++) {
-   if (keys[i].CompareEquals(other.keys[i]) != CmpBool::CmpTrue) {
+  for (uint32_t i = 0; i < other.keys_.size(); i++) {
+   if (keys_[i].CompareEquals(other.keys_[i]) != CmpBool::CmpTrue) {
     return false;
    }
   }
@@ -42,7 +42,7 @@ template <>
 struct hash<bustub::HashJoinKey> {
  auto operator()(const bustub::HashJoinKey &join_key) const -> std::size_t {
   size_t curr_hash = 0;
-  for (const auto &key : join_key.keys) {
+  for (const auto &key : join_key.keys_) {
    if (!key.IsNull()) {
     curr_hash = bustub::HashUtil::CombineHashes(curr_hash, bustub::HashUtil::HashValue(&key));
    }
