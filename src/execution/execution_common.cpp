@@ -10,9 +10,44 @@
 
 namespace bustub {
 
+auto CheckWriteConflict(timestamp_t ts,timestamp_t read_ts,timestamp_t txn_ts)-> bool {
+  return ((ts&TXN_START_ID)==0&&ts>read_ts)||((ts&TXN_START_ID)!=0&&ts!=txn_ts);
+}
+
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  UNIMPLEMENTED("not implemented");
+  auto tuple=base_tuple;
+  auto meta=base_meta;
+  for(auto undo_log : undo_logs) {
+    if(undo_log.is_deleted_) {
+      meta.is_deleted_=true;
+    }else {
+      meta.is_deleted_=false;
+      std::vector<Column> columns;
+      for(size_t i=0;i<schema->GetColumnCount();++i) {
+        if(undo_log.modified_fields_[i]) {
+          columns.emplace_back(schema->GetColumn(i));
+        }
+      }
+      if(!columns.empty()) {
+        std::vector<Value> values;
+        Schema column_schema=Schema(columns);
+        size_t column_idx=0;
+        for(size_t i=0;i<schema->GetColumnCount();++i) {
+          if(undo_log.modified_fields_[i]) {
+            values.emplace_back(undo_log.tuple_.GetValue(&column_schema,column_idx++));
+          }else {
+            values.emplace_back(tuple.GetValue(schema,i));
+          }
+        }
+        tuple=Tuple(values,schema);
+      }
+    }
+  }
+  if(meta.is_deleted_) {
+    return std::nullopt;
+  }
+  return tuple;
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,

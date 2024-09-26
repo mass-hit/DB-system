@@ -14,6 +14,9 @@
 
 #include "execution/executors/delete_executor.h"
 
+#include <concurrency/transaction_manager.h>
+#include <execution/execution_common.h>
+
 namespace bustub {
 
 DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *plan,
@@ -22,7 +25,10 @@ DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *
 
 void DeleteExecutor::Init() {
   child_executor_->Init();
+  table_info_=exec_ctx_->GetCatalog()->GetTable(plan_->GetTableOid());
   flag_=false;
+  txn_=exec_ctx_->GetTransaction();
+  txn_manager_=exec_ctx_->GetTransactionManager();
 }
 
 auto DeleteExecutor::Next(Tuple *tuple, RID *rid) -> bool {
@@ -32,10 +38,27 @@ auto DeleteExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   while (child_executor_->Next(&child_tuple, &child_rid)) {
-    table_info->table_->UpdateTupleMeta({0,true},child_rid);
-    for(auto index_info:index_infos) {
-      index_info->index_->DeleteEntry(child_tuple.KeyFromTuple(table_info->schema_,index_info->key_schema_,index_info->index_->GetKeyAttrs()),child_rid,exec_ctx_->GetTransaction());
+    TupleMeta meta=table_info_->table_->GetTupleMeta(child_rid);
+    if(CheckWriteConflict(meta.ts_,txn_->GetReadTs(),txn_->GetTransactionTempTs())) {
+      txn_->SetTainted();
+      throw ExecutionException("write conflict");
     }
+    TupleMeta inserted_meta={txn_->GetTransactionTempTs(),true};
+    std::vector<bool> modified_fields;
+    auto undo_link=txn_manager_->GetUndoLink(child_rid);
+    if((meta.ts_&TXN_START_ID)==0) {
+      for(size_t i=0;i<GetOutputSchema().GetColumnCount();++i) {
+          modified_fields.push_back(true);
+      }
+      UndoLog undo_log={false,modified_fields,child_tuple,meta.ts_};
+      if(undo_link!=std::nullopt&&undo_link->IsValid()) {
+        undo_log.prev_version_=*undo_link;
+      }
+      undo_link=txn_->AppendUndoLog(undo_log);
+      txn_manager_->UpdateUndoLink(child_rid,undo_link);
+    }
+    table_info_->table_->UpdateTupleMeta(inserted_meta,child_rid);
+    txn_->AppendWriteSet(plan_->table_oid_,child_rid);
     ++rows_deleted;
   }
   std::vector<Value> values;

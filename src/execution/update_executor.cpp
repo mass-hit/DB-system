@@ -13,6 +13,9 @@
 
 #include "execution/executors/update_executor.h"
 
+#include <concurrency/transaction_manager.h>
+#include <execution/execution_common.h>
+
 namespace bustub {
 
 UpdateExecutor::UpdateExecutor(ExecutorContext *exec_ctx, const UpdatePlanNode *plan,
@@ -25,6 +28,8 @@ void UpdateExecutor::Init() {
   child_executor_->Init();
   table_info_=exec_ctx_->GetCatalog()->GetTable(plan_->GetTableOid());
   flag_=false;
+  txn_=exec_ctx_->GetTransaction();
+  txn_manager_=exec_ctx_->GetTransactionManager();
 }
 
 auto UpdateExecutor::Next(Tuple *tuple, RID *rid) -> bool {
@@ -33,23 +38,67 @@ auto UpdateExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   while (child_executor_->Next(&child_tuple, &child_rid)) {
-    table_info_->table_->UpdateTupleMeta({0,true},child_rid);
-    for(auto index_info:index_infos) {
-      index_info->index_->DeleteEntry(child_tuple.KeyFromTuple(table_info_->schema_,index_info->key_schema_,index_info->index_->GetKeyAttrs()),child_rid,exec_ctx_->GetTransaction());
+    TupleMeta meta=table_info_->table_->GetTupleMeta(child_rid);
+    if(CheckWriteConflict(meta.ts_,txn_->GetReadTs(),txn_->GetTransactionTempTs())) {
+      txn_->SetTainted();
+      throw ExecutionException("write conflict");
     }
-    std::vector<Value> values{};
-    values.reserve(child_executor_->GetOutputSchema().GetColumnCount());
-    for (const auto &expr : plan_->target_expressions_) {
+    TupleMeta inserted_meta={txn_->GetTransactionTempTs(),false};
+    std::vector<bool> modified_fields;
+    std::vector<Value> new_values;
+    std::vector<Column> new_columns;
+    std::vector<Value>values;
+    auto undo_link=txn_manager_->GetUndoLink(child_rid);
+    values.reserve(plan_->target_expressions_.size());
+for (const auto &expr : plan_->target_expressions_) {
       values.push_back(expr->Evaluate(&child_tuple, child_executor_->GetOutputSchema()));
     }
-    Tuple inserted_tuple = Tuple(values, &child_executor_->GetOutputSchema());
-    auto result=table_info_->table_->InsertTuple({0,false},inserted_tuple, exec_ctx_->GetLockManager(),exec_ctx_->GetTransaction(),plan_->GetTableOid());
-    if (result!=std::nullopt) {
-      ++rows_updated;
-      for(auto index_info:index_infos) {
-        index_info->index_->InsertEntry(inserted_tuple.KeyFromTuple(table_info_->schema_,index_info->key_schema_,index_info->index_->GetKeyAttrs()),result.value(),exec_ctx_->GetTransaction());
+    Tuple inserted_tuple=Tuple{values,&child_executor_->GetOutputSchema()};
+    if(IsTupleContentEqual(inserted_tuple,child_tuple)) {
+      continue;
+    }
+    if((meta.ts_&TXN_START_ID)==0) {
+      for(size_t i=0;i<plan_->target_expressions_.size();++i) {
+        auto prev_value=child_tuple.GetValue(&child_executor_->GetOutputSchema(),i);
+        auto new_value=inserted_tuple.GetValue(&child_executor_->GetOutputSchema(),i);
+        if(!new_value.CompareExactlyEquals(prev_value)) {
+          modified_fields.push_back(true);
+          new_values.push_back(prev_value);
+          new_columns.push_back(child_executor_->GetOutputSchema().GetColumn(i));
+        }else {
+          modified_fields.push_back(false);
+        }
+      }
+      auto schema=Schema(new_columns);
+      UndoLog undo_log={false,modified_fields,Tuple(new_values,&schema),meta.ts_};
+      if(undo_link!=std::nullopt&&undo_link->IsValid()) {
+        undo_log.prev_version_=*undo_link;
+      }
+      undo_link=txn_->AppendUndoLog(undo_log);
+      txn_manager_->UpdateUndoLink(child_rid,undo_link);
+    }else if(undo_link!=std::nullopt&&undo_link->IsValid()) {
+      auto prev_undo_log=txn_manager_->GetUndoLog(*undo_link);
+      auto prev_tuple= ReconstructTuple(&child_executor_->GetOutputSchema(),child_tuple,meta,{prev_undo_log});
+      if(prev_tuple!=std::nullopt) {
+        for(size_t i=0;i<plan_->target_expressions_.size();++i) {
+          auto prev_value=prev_tuple->GetValue(&child_executor_->GetOutputSchema(),i);
+          auto new_value=inserted_tuple.GetValue(&child_executor_->GetOutputSchema(),i);
+          if(!new_value.CompareExactlyEquals(prev_value)||prev_undo_log.modified_fields_[i]) {
+            modified_fields.push_back(true);
+            new_values.push_back(prev_value);
+            new_columns.push_back(child_executor_->GetOutputSchema().GetColumn(i));
+          }else {
+            modified_fields.push_back(false);
+          }
+        }
+        auto schema=Schema(new_columns);
+        UndoLog undo_log={false,modified_fields,Tuple(new_values,&schema),prev_undo_log.ts_,prev_undo_log.prev_version_};
+        txn_->ModifyUndoLog(0,undo_log);
       }
     }
+    table_info_->table_->UpdateTupleInPlace(inserted_meta,inserted_tuple,child_rid);
+    txn_->AppendWriteSet(plan_->table_oid_,child_rid);
+    ++rows_updated;
   }
   std::vector<Value> values;
   values.emplace_back(TypeId::INTEGER, rows_updated);

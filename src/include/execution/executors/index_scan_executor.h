@@ -47,5 +47,7 @@ class IndexScanExecutor : public AbstractExecutor {
  TableInfo * table_info_;
  std::vector<RID> rids_;
  std::vector<RID>::iterator rid_iter_;
+ Transaction* txn_;
+ TransactionManager *txn_manager_;
 };
 }  // namespace bustub

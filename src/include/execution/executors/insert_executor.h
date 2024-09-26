@@ -59,6 +59,8 @@ class InsertExecutor : public AbstractExecutor {
   const InsertPlanNode *plan_;
   std::unique_ptr<AbstractExecutor> child_executor_;
  bool flag_;
+ Transaction* txn_;
+ TransactionManager *txn_manager_;
 };
 
 }  // namespace bustub

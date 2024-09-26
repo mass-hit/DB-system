@@ -10,6 +10,8 @@
 
 namespace bustub {
 
+auto CheckWriteConflict(timestamp_t ts,timestamp_t read_ts,timestamp_t txn_ts)->bool;
+
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple>;
 
