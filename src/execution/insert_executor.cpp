@@ -45,6 +45,7 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     }
     if(rids.empty()) {
       auto result=table_info->table_->InsertTuple({txn_->GetTransactionTempTs(),false},child_tuple, exec_ctx_->GetLockManager(),txn_,plan_->GetTableOid());
+      txn_manager_->UpdateVersionLink(*result, VersionUndoLink{UndoLink{}, true});
       if (result!=std::nullopt) {
         ++rows_inserted;
         for(auto index_info:index_infos) {
@@ -69,7 +70,7 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
             undo_log.prev_version_=*undo_link;
           }
           undo_link=txn_->AppendUndoLog(undo_log);
-          txn_manager_->UpdateUndoLink(*rid,undo_link);
+          txn_manager_->UpdateVersionLink(*rid,VersionUndoLink{*undo_link, true});
           meta.is_deleted_=false;
           meta.ts_=txn_->GetTransactionTempTs();
           table_info->table_->UpdateTupleInPlace(meta,child_tuple,*rid);

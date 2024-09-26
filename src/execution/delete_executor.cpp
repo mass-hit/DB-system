@@ -55,7 +55,7 @@ auto DeleteExecutor::Next(Tuple *tuple, RID *rid) -> bool {
         undo_log.prev_version_=*undo_link;
       }
       undo_link=txn_->AppendUndoLog(undo_log);
-      txn_manager_->UpdateUndoLink(child_rid,undo_link);
+      txn_manager_->UpdateVersionLink(*rid,VersionUndoLink{*undo_link, true});
     }
     table_info_->table_->UpdateTupleMeta(inserted_meta,child_rid);
     txn_->AppendWriteSet(plan_->table_oid_,child_rid);

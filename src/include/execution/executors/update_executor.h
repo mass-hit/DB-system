@@ -69,5 +69,6 @@ class UpdateExecutor : public AbstractExecutor {
  bool flag_;
  Transaction* txn_;
  TransactionManager *txn_manager_;
+ bool pk_;
 };
 }  // namespace bustub
